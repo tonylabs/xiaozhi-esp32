@@ -1309,10 +1309,14 @@ printer_self_test();
 Command(HEX): 1B 40
 Description: Clean printer cache, reset all settings to defaults
 
+---
+
 ### 打印自测试页
 
 Command(HEX): 12 54
 Description: 打印机打印一张自测页，上面包含打印机的程序版本，通讯接口类型，代码页和其他一些数据
+
+---
 
 ### 设置字符打印方式
 
@@ -1339,6 +1343,8 @@ Example:
 1B 40 1B 21 04 30 31 32 0D 0A
 1B 40 1B 21 08 30 31 32 0D 0A
 
+---
+
 ### 设定字符大
 
 Command(HEX): 1d 21 n
@@ -1354,13 +1360,15 @@ Description: 设定字符大小
 Example:
 
 1B 40 1d 21 00
-CF C3 C3 C5 B4 EF C6 D5 B5 E7 D7 D3 0d 0a
+CF C3 C3 C5 B4 EF C6 D5 B5 E7 D7 D3 0d 0A
 1B 40 1d 21 11
-CF C3 C3 C5 B4 EF C6 D5 B5 E7 D7 D3 0d 0a
+CF C3 C3 C5 B4 EF C6 D5 B5 E7 D7 D3 0d 0A
 1B 40 1d 21 10
-CF C3 C3 C5 B4 EF C6 D5 B5 E7 D7 D3 0d 0a
+CF C3 C3 C5 B4 EF C6 D5 B5 E7 D7 D3 0d 0A
 1B 40 1d 21 01
-CF C3 C3 C5 B4 EF C6 D5 B5 E7 D7 D3 0d 0a
+CF C3 C3 C5 B4 EF C6 D5 B5 E7 D7 D3 0d 0A
+
+---
 
 ### 设置打印对齐方式
 
@@ -1383,6 +1391,78 @@ BE D3 D6 D0 B6 D4 C6 EB 0D 0A
 1B 40 1B 61 02
 BF BF D3 D2 B6 D4 C6 EB 0D 0A
 
+---
+
+### 水平位置打印行线段 (曲线打印命令)
+
+Command(HEX): 29 39 n x1sL x1eH x1eL x1eH ...xnsL xnsH xneL xneH
+Description: 打印放大图如下所示：每个水平曲线段可以视为由段长度为 1 的这些点组成。打印 n 行水平线段的，连续使用该命令就可以打印出所需的曲线。
+
+Example:
+
+xksL : K 线起点低阶的水平坐标；
+xksH : K 线起点高阶的水平坐标；
+xkeL : K 线结束点低阶的水平坐标；
+xkeH : K 线结束点高阶的水平坐标；
+坐标开始位置通常是打印区域的左边。最小坐标坐标为（0,0），最大横坐标值 383，xkeL+xkeH*256, 行数据可以不按规定范围内顺序排列；
+
+Example Code:
+
+```c
+Char SendStr[8];
+Char SendStr2[16];
+Float i;
+Short y1,y2,y1s,y2s;
+//打印 Y 轴（一条线）
+SendStr[0]=0x1D;
+SendStr[1]=0x27;
+SendStr[2]=1； //一行
+SendStr[3]=30
+SendStr[4]=0; //开始点
+SendStr[5]=104;
+SendStr[6]=1; //结束点
+PreSendData(SendStr,7);
+//Print curve
+SendStr[0]=0x1D;
+SendStr[1]=0x27;
+SendStr[2]=3; X 轴，sin 和 cos
+//Three lines:X-axis,sin and cos function curve 三条线：
+函数
+SendStr[3]=180; SendStr[4]=0; // X 轴位置
+SendStr[5]=180; SendStr[6]=0;
+for(i=1;i<1200;i++)
+{
+  y1=sin(i/180*3.1416)*(380-30)/2+180; //计算 sin 函数坐标
+  y2=cos(i/180*3.1416)*(380-30)/2+180; //计算 cos 函数坐标
+  If(i==1){y1s=y1;y2s=y2;}
+  PreSendData(SendStr,7);
+  If(y1s<y1)
+  {
+    PreSendData(&y1s,2); //sin 函数在该行的起始点
+    PreSendData(&y1,2); //sin 函数在该行的结束点
+  }
+  Else
+  {
+    PreSendData(&y1,2); //sin 函数在该行的起始点
+    PreSendData(&y1s,2); //sin 函数在该行的结束点
+  }
+  
+  If(y2s<y2) {
+    PreSendData(&y2s,2); //cos 函数在该行的起始点
+    PreSendData(&y2,2); //cos 函数在该行的结束点
+  }
+  Else
+  {
+    PreSendData(&y2,2); //cos 函数在该行的起始点
+    PreSendData(&y2s,2); //cos 函数在该行的结束点
+    y1s=y1; // 当打印进入下一行，sin 函数曲线起点横坐标
+    y2s=y2; //当打印进入下一行，cos 函数曲线起点横坐标
+  }
+}
+```
+
+---
+
 ### 设置行间距为 n 点
 
 Command(HEX): 1B 33 n
@@ -1403,6 +1483,8 @@ BE 0D 0A
 CF C3 C3 C5 B4 EF C6 D5 B5 E7 D7 D3 BF C6 BC BC D3 D0 CF DE B9 AB CB
 BE 0D 0A
 
+---
+
 ### 读取缺纸状态
 
 Command(HEX): 10 04 01
@@ -1412,13 +1494,17 @@ Example:
 
 发送检查缺纸指令：`10 04 01` ，发送一次就返回一次数据
 返回数据:
-FE 23 12（打印机有纸）
-EF 23 1A（打印机缺纸）
+FE 23 12 (打印机有纸)
+EF 23 1A (打印机缺纸)
+
+---
 
 ### 打印状态
 
 发送打印机数据打印机打印完成隔 500ms（毫秒）没有数据发送打印机就自动返回数据：FC 4F 4B（打印完成）
 发送数据打印过程中出现缺纸的情况会返回 FC 6E 6F（打印失败）
+
+---
 
 ### 设置打印机串口波特率
 
@@ -1444,6 +1530,8 @@ Default m Value: 5
 | 13   | 153600  |      |          |
 | 14   | 230400  |      |          |
 
+---
+
 ## 设置断电默认串口打开或关闭状态
 
 Command(HEX): 1F 2D 71 01 m
@@ -1463,6 +1551,8 @@ Example:
 下发设置数据后打印机会打印出“Successfully Set The Uart open state is Close”
 
 返回数据：1F 2D 71 01 m
+
+---
 
 ## 设置串口状态（该指令断电不保存）
 
@@ -1484,6 +1574,8 @@ CF C3 C3 C5 B4 EF C6 D5 B5 E7 D7 D3 BF C6 BC BC D3 D0 CF DE B9 AB CB
 BE 0d 0a
 1F 77 01 (再关闭串口)
 ```
+
+---
 
 ## 设置是否进纸、进纸行数、结束数据多长时间
 
@@ -1576,6 +1668,45 @@ C9 A8 D2 BB C9 A8 B9 D8 D7 A2//文本内容"扫一扫关注" 0d 0a //换行
 1b 61 01
 C9 A8 D2 BB C9 A8 B9 D8 D7 A2 0d 0a 0d 0a 0d 0a 0d 0a 0d 0a 1b 69
 ```
+
+---
+
+## 图形打印指令
+
+### 图形垂直取模数据填充
+
+Command (HEX): 1B 2A m Hl Hh [d]k
+
+Description: 打印纵向取模图像数据，参数意义如下：
+- `m` 为点图格式：
+
+| m  | 模式           | 水平比例 | 垂直比例 |
+|----|----------------|----------|----------|
+| 0  | 8 点单密度     | ×2       | ×3       |
+| 1  | 8 点双密度     | ×1       | ×3       |
+| 32 | 24 点单密度    | ×2       | ×1       |
+| 33 | 24 点双密度    | ×1       | ×1       |
+
+- `Hl` `Hh` 为水平方向点数（Hl＋256×Hh）
+- [d]k 为点图数据
+- `k` 用于指示点图数据字节数，不参加传输
+
+参数范围：
+
+XX58：
+  m = 0、1、32、33
+  1 ≤ Hl + Hh × 256 ≤ 384
+  0 ≤ d ≤ 255
+  k = Hl + Hh × 256（当 m = 0、1）
+  k = ( Hl + Hh × 256 ) × 3（当 m = 32、33）
+  XX80：
+  m = 0、1、32、33
+  1 ≤ Hl + Hh × 256 ≤ 576
+  0 ≤ d ≤ 255
+  k = Hl + Hh × 256（当 m = 0、1）
+  k = ( Hl + Hh × 256 ) × 3（当 m = 32、33）
+
+---
 
 ### 横向图片图片打印
 

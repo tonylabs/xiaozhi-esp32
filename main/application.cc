@@ -9,6 +9,7 @@
 #include "mcp_server.h"
 #include "assets.h"
 #include "settings.h"
+#include "printer/thermal_printer.h"
 
 #include <cstring>
 #include <esp_log.h>
@@ -310,9 +311,10 @@ void Application::HandleActivationDoneEvent() {
     // Play the success sound to indicate the device is ready
     audio_service_.PlaySound(Lang::Sounds::OGG_SUCCESS);
 
+    auto& board = Board::GetInstance();
+
     // Release OTA object after activation is complete
     ota_.reset();
-    auto& board = Board::GetInstance();
     board.SetPowerSaveLevel(PowerSaveLevel::LOW_POWER);
 }
 
@@ -524,9 +526,22 @@ void Application::InitializeProtocol() {
         });
     });
     
-    protocol_->OnIncomingJson([this, display](const cJSON* root) {
+    auto printer = board.GetThermalPrinter();
+    protocol_->OnIncomingJson([this, display, printer](const cJSON* root) {
         // Parse JSON data
         auto type = cJSON_GetObjectItem(root, "type");
+        if (!cJSON_IsString(type)) {
+            if (auto json_str = cJSON_PrintUnformatted(root)) {
+                ESP_LOGW(TAG, "Incoming JSON missing string 'type': %s", json_str);
+                cJSON_free(json_str);
+            } else {
+                ESP_LOGW(TAG, "Incoming JSON missing string 'type'");
+            }
+            return;
+        }
+
+        ESP_LOGI(TAG, "Incoming JSON type: %s", type->valuestring);
+
         if (strcmp(type->valuestring, "tts") == 0) {
             auto state = cJSON_GetObjectItem(root, "state");
             if (strcmp(state->valuestring, "start") == 0) {
@@ -556,10 +571,23 @@ void Application::InitializeProtocol() {
         } else if (strcmp(type->valuestring, "stt") == 0) {
             auto text = cJSON_GetObjectItem(root, "text");
             if (cJSON_IsString(text)) {
-                ESP_LOGI(TAG, ">> %s", text->valuestring);
+                ESP_LOGI(TAG, "STT text: %s", text->valuestring);
                 Schedule([display, message = std::string(text->valuestring)]() {
                     display->SetChatMessage("user", message.c_str());
-                });
+                }); 
+                if (printer != nullptr && printer->initialized()) {
+                    // Direct UART write keeps latency low; payload is small.
+                    esp_err_t err = printer->PrintText(text->valuestring);
+                    if (err != ESP_OK) {
+                        ESP_LOGE(TAG, "Printer write failed: %s", esp_err_to_name(err));
+                    } else {
+                        ESP_LOGI(TAG, "Printer wrote STT text");
+                    }
+                } else {
+                    ESP_LOGW(TAG, "Thermal printer unavailable or not initialized; skip printing STT text");
+                }
+            } else {
+                ESP_LOGW(TAG, "STT message missing string 'text'");
             }
         } else if (strcmp(type->valuestring, "llm") == 0) {
             if (auto json_str = cJSON_PrintUnformatted(root)) {
@@ -636,7 +664,12 @@ void Application::InitializeProtocol() {
             }
 #endif
         } else {
-            ESP_LOGW(TAG, "Unknown message type: %s", type->valuestring);
+            if (auto json_str = cJSON_PrintUnformatted(root)) {
+                ESP_LOGW(TAG, "Unknown message type: %s | payload: %s", type->valuestring, json_str);
+                cJSON_free(json_str);
+            } else {
+                ESP_LOGW(TAG, "Unknown message type: %s", type->valuestring);
+            }
         }
     });
     

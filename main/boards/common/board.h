@@ -8,7 +8,6 @@
 #include <string>
 #include <functional>
 #include <network_interface.h>
-
 #include "led/led.h"
 #include "backlight.h"
 #include "camera.h"
@@ -46,6 +45,7 @@ using NetworkEventCallback = std::function<void(NetworkEvent event, const std::s
 void* create_board();
 class AudioCodec;
 class Display;
+class ThermalPrinter;
 class Board {
 private:
     Board(const Board&) = delete; // 禁用拷贝构造函数
@@ -70,6 +70,7 @@ public:
     virtual Backlight* GetBacklight() { return nullptr; }
     virtual Led* GetLed();
     virtual AudioCodec* GetAudioCodec() = 0;
+    virtual ThermalPrinter* GetThermalPrinter() { return nullptr; }
     virtual bool GetTemperature(float& esp32temp);
     virtual Display* GetDisplay();
     virtual Camera* GetCamera();

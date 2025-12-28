@@ -5,6 +5,7 @@
 #include "display/panels/ts040wvs02np.h"
 #include "button.h"
 #include "config.h"
+#include "printer/thermal_printer.h"
 #include <driver/i2c_master.h>
 #include <driver/spi_master.h>
 #include <esp_lcd_panel_io.h>
@@ -91,6 +92,7 @@ private:
     Button boot_button_;
     LcdDisplay *display_;
     CustomBacklight *backlight_;
+    ThermalPrinter *thermal_printer_ = nullptr;
 
     void InitializeCodecI2c() {
         // Initialize I2C peripheral
@@ -192,6 +194,7 @@ private:
     void InitializeButtons() {
         // Behavior: press-and-hold to listen, release to stop.
         boot_button_.OnPressDown([this]() {
+            ESP_LOGI(TAG, "Boot button press down");
             auto& app = Application::GetInstance();
             if (app.GetDeviceState() == kDeviceStateStarting) {
                 EnterWifiConfigMode();
@@ -201,6 +204,7 @@ private:
         });
 
         boot_button_.OnPressUp([]() {
+            ESP_LOGI(TAG, "Boot button release");
             auto& app = Application::GetInstance();
             app.StopListening();
         });
@@ -213,6 +217,7 @@ public:
         InitializeSpi();
         InitializeLCD();
         InitializeButtons();
+        InitializeThermalPrinter();
     }
 
     virtual AudioCodec *GetAudioCodec() override {
@@ -227,6 +232,27 @@ public:
     virtual Backlight *GetBacklight() override {
          return backlight_;
      }
+
+    virtual ThermalPrinter *GetThermalPrinter() override {
+        return thermal_printer_;
+    }
+
+    void InitializeThermalPrinter() {
+        thermal_printer_ = new ThermalPrinter(
+            THERMAL_PRINTER_TYPE,
+            THERMAL_PRINTER_UART_PORT,
+            THERMAL_PRINTER_UART_TXD,
+            THERMAL_PRINTER_UART_RXD,
+            THERMAL_PRINTER_UART_DTR,
+            THERMAL_PRINTER_UART_BAUD_RATE);
+
+        esp_err_t err = thermal_printer_->Init();
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to initialize thermal printer: %s", esp_err_to_name(err));
+        } else {
+            ESP_LOGI(TAG, "Thermal printer initialized");
+        }
+    }
 
 };
 
