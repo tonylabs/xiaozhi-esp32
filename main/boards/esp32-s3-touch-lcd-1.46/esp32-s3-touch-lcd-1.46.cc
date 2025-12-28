@@ -165,17 +165,19 @@ private:
             return !gpio_get_level(BOOT_BUTTON_GPIO);
         };
         ESP_ERROR_CHECK(iot_button_create(&boot_btn_config, boot_btn_driver_, &boot_btn));
-        iot_button_register_cb(boot_btn, BUTTON_SINGLE_CLICK, nullptr, [](void* button_handle, void* usr_data) {
+        // Press-and-hold to listen; release to stop
+        iot_button_register_cb(boot_btn, BUTTON_PRESS_DOWN, nullptr, [](void* button_handle, void* usr_data) {
             auto self = static_cast<CustomBoard*>(usr_data);
             auto& app = Application::GetInstance();
             if (app.GetDeviceState() == kDeviceStateStarting) {
                 self->EnterWifiConfigMode();
                 return;
             }
-            app.ToggleChatState();
+            app.StartListening();
         }, this);
-        iot_button_register_cb(boot_btn, BUTTON_LONG_PRESS_START, nullptr, [](void* button_handle, void* usr_data) {
-            // 长按无处理
+        iot_button_register_cb(boot_btn, BUTTON_PRESS_UP, nullptr, [](void* button_handle, void* usr_data) {
+            auto& app = Application::GetInstance();
+            app.StopListening();
         }, this);
 
         // Power Button
