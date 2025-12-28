@@ -23,6 +23,13 @@
 
 #define I2C_ADDRESS         ESP_IO_EXPANDER_I2C_TCA9554_ADDRESS_000
 
+#define THERMAL_PRINTER_TYPE            FTP_628MCL101_50MM
+#define THERMAL_PRINTER_UART_PORT       (UART_NUM_1)
+#define THERMAL_PRINTER_UART_DTR        (GPIO_NUM_3)
+#define THERMAL_PRINTER_UART_TXD        (GPIO_NUM_12)
+#define THERMAL_PRINTER_UART_RXD        (GPIO_NUM_13)
+#define THERMAL_PRINTER_UART_BAUD_RATE  (9600)
+
 #define DISPLAY_WIDTH       412
 #define DISPLAY_HEIGHT      412
 #define DISPLAY_MIRROR_X    false
@@ -33,15 +40,15 @@
 #define QSPI_LCD_V_RES           (412)
 #define QSPI_LCD_BIT_PER_PIXEL   (16)
 
-#define QSPI_LCD_HOST           SPI2_HOST
-#define QSPI_PIN_NUM_LCD_PCLK   GPIO_NUM_40
-#define QSPI_PIN_NUM_LCD_CS     GPIO_NUM_21
-#define QSPI_PIN_NUM_LCD_DATA0  GPIO_NUM_46
-#define QSPI_PIN_NUM_LCD_DATA1  GPIO_NUM_45
-#define QSPI_PIN_NUM_LCD_DATA2  GPIO_NUM_42
-#define QSPI_PIN_NUM_LCD_DATA3  GPIO_NUM_41
-#define QSPI_PIN_NUM_LCD_RST    GPIO_NUM_NC
-#define QSPI_PIN_NUM_LCD_BL     GPIO_NUM_5
+#define QSPI_LCD_HOST           (SPI2_HOST)
+#define QSPI_PIN_NUM_LCD_PCLK   (GPIO_NUM_40)
+#define QSPI_PIN_NUM_LCD_CS     (GPIO_NUM_21)
+#define QSPI_PIN_NUM_LCD_DATA0  (GPIO_NUM_46)
+#define QSPI_PIN_NUM_LCD_DATA1  (GPIO_NUM_45)
+#define QSPI_PIN_NUM_LCD_DATA2  (GPIO_NUM_42)
+#define QSPI_PIN_NUM_LCD_DATA3  (GPIO_NUM_41)
+#define QSPI_PIN_NUM_LCD_RST    (GPIO_NUM_NC)
+#define QSPI_PIN_NUM_LCD_BL     (GPIO_NUM_5)
 
 #define DISPLAY_OFFSET_X  0
 #define DISPLAY_OFFSET_Y  0
@@ -64,6 +71,5 @@
         .data3_io_num = d3,                                                       \
         .max_transfer_sz = max_trans_sz,                                          \
     }
-
 
 #endif // _BOARD_CONFIG_H_
