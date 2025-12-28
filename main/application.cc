@@ -574,7 +574,8 @@ void Application::InitializeProtocol() {
                 ESP_LOGI(TAG, "STT text: %s", text->valuestring);
                 Schedule([display, message = std::string(text->valuestring)]() {
                     display->SetChatMessage("user", message.c_str());
-                }); 
+                });
+                /*
                 if (printer != nullptr && printer->initialized()) {
                     // Direct UART write keeps latency low; payload is small.
                     esp_err_t err = printer->PrintText(text->valuestring);
@@ -586,6 +587,7 @@ void Application::InitializeProtocol() {
                 } else {
                     ESP_LOGW(TAG, "Thermal printer unavailable or not initialized; skip printing STT text");
                 }
+                */
             } else {
                 ESP_LOGW(TAG, "STT message missing string 'text'");
             }
