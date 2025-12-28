@@ -88,17 +88,14 @@ OledDisplay::~OledDisplay() {
         lv_obj_del(content_);
     }
 
-    bool is_128x64_layout = (top_bar_ != nullptr);
+    bool is_128x64_layout = (height_ == 64);
     if (status_bar_ != nullptr && is_128x64_layout) {
         status_label_ = nullptr;
         notification_label_ = nullptr;
-        lv_obj_del(status_bar_);
-    }
-    if (top_bar_ != nullptr) {
         network_label_ = nullptr;
         mute_label_ = nullptr;
         battery_label_ = nullptr;
-        lv_obj_del(top_bar_);
+        lv_obj_del(status_bar_);
     }
     if (side_bar_ != nullptr) {
         if (!is_128x64_layout) {
@@ -158,7 +155,6 @@ void OledDisplay::SetupUI_128x64() {
 
     auto lvgl_theme = static_cast<LvglTheme*>(current_theme_);
     auto text_font = lvgl_theme->text_font()->font();
-    auto icon_font = lvgl_theme->icon_font()->font();
     auto large_icon_font = lvgl_theme->large_icon_font()->font();
 
     auto screen = lv_screen_active();
@@ -172,37 +168,7 @@ void OledDisplay::SetupUI_128x64() {
     lv_obj_set_style_pad_all(container_, 0, 0);
     lv_obj_set_style_border_width(container_, 0, 0);
     lv_obj_set_style_pad_row(container_, 0, 0);
-
-    /* Layer 1: Top bar - for status icons */
-    top_bar_ = lv_obj_create(container_);
-    lv_obj_set_size(top_bar_, LV_HOR_RES, 16);
-    lv_obj_set_style_radius(top_bar_, 0, 0);
-    lv_obj_set_style_bg_opa(top_bar_, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(top_bar_, 0, 0);
-    lv_obj_set_style_pad_all(top_bar_, 0, 0);
-    lv_obj_set_flex_flow(top_bar_, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(top_bar_, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_scrollbar_mode(top_bar_, LV_SCROLLBAR_MODE_OFF);
-
-    network_label_ = lv_label_create(top_bar_);
-    lv_label_set_text(network_label_, "");
-    lv_obj_set_style_text_font(network_label_, icon_font, 0);
-
-    lv_obj_t* right_icons = lv_obj_create(top_bar_);
-    lv_obj_set_size(right_icons, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-    lv_obj_set_style_bg_opa(right_icons, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(right_icons, 0, 0);
-    lv_obj_set_style_pad_all(right_icons, 0, 0);
-    lv_obj_set_flex_flow(right_icons, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(right_icons, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-    mute_label_ = lv_label_create(right_icons);
-    lv_label_set_text(mute_label_, "");
-    lv_obj_set_style_text_font(mute_label_, icon_font, 0);
-
-    battery_label_ = lv_label_create(right_icons);
-    lv_label_set_text(battery_label_, "");
-    lv_obj_set_style_text_font(battery_label_, icon_font, 0);
+    lv_obj_set_style_pad_top(container_, lvgl_theme->spacing(2), 0);
 
     /* Layer 2: Status bar - for center text labels */
     status_bar_ = lv_obj_create(screen);
@@ -213,7 +179,8 @@ void OledDisplay::SetupUI_128x64() {
     lv_obj_set_style_pad_all(status_bar_, 0, 0);
     lv_obj_set_scrollbar_mode(status_bar_, LV_SCROLLBAR_MODE_OFF);
     lv_obj_set_style_layout(status_bar_, LV_LAYOUT_NONE, 0);  // Use absolute positioning
-    lv_obj_align(status_bar_, LV_ALIGN_TOP_MID, 0, 0);  // Overlap with top_bar_
+    lv_obj_align(status_bar_, LV_ALIGN_TOP_MID, 0, 0);
+    lv_obj_add_flag(status_bar_, LV_OBJ_FLAG_HIDDEN);
 
     notification_label_ = lv_label_create(status_bar_);
     lv_obj_set_width(notification_label_, LV_HOR_RES);
