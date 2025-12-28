@@ -14,7 +14,7 @@
 #define TAG "WS"
 
 WebsocketProtocol::WebsocketProtocol() {
-#ifdef CONFIG_BOARD_TYPE_WAVESHARE_S3_TOUCH_LCD_1_46
+#if defined(CONFIG_BOARD_TYPE_WAVESHARE_S3_TOUCH_LCD_1_46) || defined(CONFIG_BOARD_TYPE_STIKADOO_ESP32P4_WIFI6_QSPI_BOARD)
     use_pcm_base64_ = true;
 #endif
     event_group_handle_ = xEventGroupCreate();
