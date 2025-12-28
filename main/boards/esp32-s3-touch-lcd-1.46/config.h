@@ -5,7 +5,7 @@
 #include <driver/spi_master.h>
 
 #define AUDIO_INPUT_SAMPLE_RATE  16000
-#define AUDIO_OUTPUT_SAMPLE_RATE 24000
+#define AUDIO_OUTPUT_SAMPLE_RATE 16000
 
 #define BOOT_BUTTON_GPIO        GPIO_NUM_0
 #define PWR_BUTTON_GPIO         GPIO_NUM_6
@@ -18,9 +18,8 @@
 #define AUDIO_I2S_SPK_GPIO_BCLK GPIO_NUM_48
 #define AUDIO_I2S_SPK_GPIO_LRCK GPIO_NUM_38
 
-#define I2C_SCL_IO          GPIO_NUM_10       
-#define I2C_SDA_IO          GPIO_NUM_11        
-
+#define I2C_SCL_IO          GPIO_NUM_10
+#define I2C_SDA_IO          GPIO_NUM_11
 
 #define I2C_ADDRESS         ESP_IO_EXPANDER_I2C_TCA9554_ADDRESS_000
 

@@ -7,7 +7,13 @@
 #include <chrono>
 #include <vector>
 
+enum class AudioPayloadFormat {
+    kAudioPayloadFormatOpus,
+    kAudioPayloadFormatPcm16,
+};
+
 struct AudioStreamPacket {
+    AudioPayloadFormat format = AudioPayloadFormat::kAudioPayloadFormatOpus;
     int sample_rate = 0;
     int frame_duration = 0;
     uint32_t timestamp = 0;

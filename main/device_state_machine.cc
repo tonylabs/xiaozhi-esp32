@@ -13,6 +13,7 @@ static const char* const STATE_STRINGS[] = {
     "idle",
     "connecting",
     "listening",
+    "thinking",
     "speaking",
     "upgrading",
     "activating",
@@ -69,9 +70,10 @@ bool DeviceStateMachine::IsValidTransition(DeviceState from, DeviceState to) con
                    to == kDeviceStateActivating;
 
         case kDeviceStateIdle:
-            // Can go to connecting, listening (manual mode), speaking, activating, upgrading, or wifi configuring
+            // Can go to connecting, listening (manual mode), thinking, speaking, activating, upgrading, or wifi configuring
             return to == kDeviceStateConnecting ||
                    to == kDeviceStateListening ||
+                   to == kDeviceStateThinking ||
                    to == kDeviceStateSpeaking ||
                    to == kDeviceStateActivating ||
                    to == kDeviceStateUpgrading ||
@@ -83,13 +85,21 @@ bool DeviceStateMachine::IsValidTransition(DeviceState from, DeviceState to) con
                    to == kDeviceStateListening;
 
         case kDeviceStateListening:
-            // Can go to speaking or idle
-            return to == kDeviceStateSpeaking ||
+            // Can go to thinking, speaking or idle
+            return to == kDeviceStateThinking ||
+                   to == kDeviceStateSpeaking ||
                    to == kDeviceStateIdle;
 
         case kDeviceStateSpeaking:
-            // Can go to listening or idle
+            // Can go to thinking, listening or idle
+            return to == kDeviceStateThinking ||
+                   to == kDeviceStateListening ||
+                   to == kDeviceStateIdle;
+
+        case kDeviceStateThinking:
+            // Can go to listening, speaking or idle
             return to == kDeviceStateListening ||
+                   to == kDeviceStateSpeaking ||
                    to == kDeviceStateIdle;
 
         case kDeviceStateFatalError:

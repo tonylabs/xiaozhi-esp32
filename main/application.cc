@@ -473,14 +473,24 @@ void Application::InitializeProtocol() {
 
     display->SetStatus(Lang::Strings::LOADING_PROTOCOL);
 
+#ifdef CONFIG_BOARD_TYPE_WAVESHARE_S3_TOUCH_LCD_1_46
+    bool use_pcm_base64_audio = false;
+#endif
     if (ota_->HasMqttConfig()) {
         protocol_ = std::make_unique<MqttProtocol>();
     } else if (ota_->HasWebsocketConfig()) {
         protocol_ = std::make_unique<WebsocketProtocol>();
+#ifdef CONFIG_BOARD_TYPE_WAVESHARE_S3_TOUCH_LCD_1_46
+        use_pcm_base64_audio = true;
+#endif
     } else {
         ESP_LOGW(TAG, "No protocol specified in the OTA config, using MQTT");
         protocol_ = std::make_unique<MqttProtocol>();
     }
+#ifdef CONFIG_BOARD_TYPE_WAVESHARE_S3_TOUCH_LCD_1_46
+    audio_service_.SetSendFormat(use_pcm_base64_audio ? AudioPayloadFormat::kAudioPayloadFormatPcm16
+                                                      : AudioPayloadFormat::kAudioPayloadFormatOpus);
+#endif
 
     protocol_->OnConnected([this]() {
         DismissAlert();
@@ -538,7 +548,7 @@ void Application::InitializeProtocol() {
                 auto text = cJSON_GetObjectItem(root, "text");
                 if (cJSON_IsString(text)) {
                     ESP_LOGI(TAG, "<< %s", text->valuestring);
-                    Schedule([this, display, message = std::string(text->valuestring)]() {
+                    Schedule([display, message = std::string(text->valuestring)]() {
                         display->SetChatMessage("assistant", message.c_str());
                     });
                 }
@@ -547,20 +557,48 @@ void Application::InitializeProtocol() {
             auto text = cJSON_GetObjectItem(root, "text");
             if (cJSON_IsString(text)) {
                 ESP_LOGI(TAG, ">> %s", text->valuestring);
-                Schedule([this, display, message = std::string(text->valuestring)]() {
+                Schedule([display, message = std::string(text->valuestring)]() {
                     display->SetChatMessage("user", message.c_str());
                 });
             }
         } else if (strcmp(type->valuestring, "llm") == 0) {
+            if (auto json_str = cJSON_PrintUnformatted(root)) {
+                ESP_LOGI(TAG, "Received LLM message: %s", json_str);
+                cJSON_free(json_str);
+            }
             auto emotion = cJSON_GetObjectItem(root, "emotion");
             if (cJSON_IsString(emotion)) {
-                Schedule([this, display, emotion_str = std::string(emotion->valuestring)]() {
+                Schedule([display, emotion_str = std::string(emotion->valuestring)]() {
                     display->SetEmotion(emotion_str.c_str());
                 });
+            }
+        } else if (strcmp(type->valuestring, "thinking") == 0) {
+            auto status = cJSON_GetObjectItem(root, "status");
+            if (cJSON_IsString(status)) {
+                if (auto json_str = cJSON_PrintUnformatted(root)) {
+                    ESP_LOGI(TAG, "Received thinking message: %s", json_str);
+                    cJSON_free(json_str);
+                }
+                if (strcmp(status->valuestring, "start") == 0) {
+                    Schedule([this]() {
+                        SetDeviceState(kDeviceStateThinking);
+                    });
+                } else if (strcmp(status->valuestring, "stop") == 0) {
+                    Schedule([this]() {
+                        SetDeviceState(kDeviceStateIdle);
+                    });
+                }
             }
         } else if (strcmp(type->valuestring, "mcp") == 0) {
             auto payload = cJSON_GetObjectItem(root, "payload");
             if (cJSON_IsObject(payload)) {
+                char* payload_str = cJSON_PrintUnformatted(payload);
+                if (payload_str != nullptr) {
+                    ESP_LOGI(TAG, "Received MCP message: %s", payload_str);
+                    cJSON_free(payload_str);
+                } else {
+                    ESP_LOGI(TAG, "Received MCP message (payload print failed)");
+                }
                 McpServer::GetInstance().ParseMessage(payload);
             }
         } else if (strcmp(type->valuestring, "system") == 0) {
@@ -832,6 +870,12 @@ void Application::HandleStateChangedEvent() {
                 play_popup_on_listening_ = false;
                 audio_service_.PlaySound(Lang::Sounds::OGG_POPUP);
             }
+            break;
+        case kDeviceStateThinking:
+            display->SetStatus("Thinking...");
+            display->SetEmotion("neutral");
+            audio_service_.EnableVoiceProcessing(false);
+            audio_service_.EnableWakeWordDetection(false);
             break;
         case kDeviceStateSpeaking:
             display->SetStatus(Lang::Strings::SPEAKING);

@@ -343,11 +343,23 @@ void AudioService::OpusCodecTask() {
             lock.unlock();
 
             auto packet = std::make_unique<AudioStreamPacket>();
+            packet->format = audio_send_format_;
             packet->frame_duration = OPUS_FRAME_DURATION_MS;
             packet->sample_rate = 16000;
             packet->timestamp = task->timestamp;
-            if (!opus_encoder_->Encode(std::move(task->pcm), packet->payload)) {
-                ESP_LOGE(TAG, "Failed to encode audio");
+            if (audio_send_format_ == AudioPayloadFormat::kAudioPayloadFormatOpus) {
+                if (!opus_encoder_->Encode(std::move(task->pcm), packet->payload)) {
+                    ESP_LOGE(TAG, "Failed to encode audio");
+                    continue;
+                }
+            } else if (audio_send_format_ == AudioPayloadFormat::kAudioPayloadFormatPcm16) {
+                auto& pcm = task->pcm;
+                packet->payload.resize(pcm.size() * sizeof(int16_t));
+                if (!pcm.empty()) {
+                    memcpy(packet->payload.data(), pcm.data(), packet->payload.size());
+                }
+            } else {
+                ESP_LOGE(TAG, "Unsupported audio send format");
                 continue;
             }
 
@@ -514,6 +526,11 @@ void AudioService::EnableDeviceAec(bool enable) {
     }
 
     audio_processor_->EnableDeviceAec(enable);
+}
+
+void AudioService::SetSendFormat(AudioPayloadFormat format) {
+    audio_send_format_ = format;
+    ESP_LOGI(TAG, "Audio send format: %s", format == AudioPayloadFormat::kAudioPayloadFormatPcm16 ? "pcm16" : "opus");
 }
 
 void AudioService::SetCallbacks(AudioServiceCallbacks& callbacks) {

@@ -3,16 +3,14 @@
 
 #include "lvgl_display.h"
 #include "gif/lvgl_gif.h"
-
+#include "stikadoo_ui.h"
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_panel_ops.h>
 #include <font_emoji.h>
-
 #include <atomic>
 #include <memory>
 
-#define PREVIEW_IMAGE_DURATION_MS 5000
-
+#define PREVIEW_IMAGE_DURATION_MS 10000
 
 class LcdDisplay : public LvglDisplay {
 protected:
@@ -32,6 +30,7 @@ protected:
     std::unique_ptr<LvglGif> gif_controller_ = nullptr;
     lv_obj_t* emoji_box_ = nullptr;
     lv_obj_t* chat_message_label_ = nullptr;
+    std::unique_ptr<StikadooUI> stikadoo_ui_ = nullptr;
     esp_timer_handle_t preview_timer_ = nullptr;
     std::unique_ptr<LvglImage> preview_image_cached_ = nullptr;
     bool hide_subtitle_ = false;  // Control whether to hide chat messages/subtitles
@@ -47,6 +46,7 @@ protected:
     
 public:
     ~LcdDisplay();
+    virtual void SetStatus(const char* status) override;
     virtual void SetEmotion(const char* emotion) override;
     virtual void SetChatMessage(const char* role, const char* content) override; 
     virtual void SetPreviewImage(std::unique_ptr<LvglImage> image) override;

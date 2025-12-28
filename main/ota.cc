@@ -9,16 +9,20 @@
 #include <esp_app_format.h>
 #include <esp_efuse.h>
 #include <esp_efuse_table.h>
-#ifdef SOC_HMAC_SUPPORTED
-#include <esp_hmac.h>
-#endif
-
+#include <mbedtls/sha256.h>
+// #ifdef SOC_HMAC_SUPPORTED
+// #include <esp_hmac.h>
+// #endif
 #include <cstring>
 #include <vector>
 #include <sstream>
 #include <algorithm>
 
-#define TAG "Ota"
+#define TAG "OTA"
+
+// Secret key for SHA256 verification (must match server's SECRET_KEY)
+// This should be the same as the SECRET_KEY environment variable on the server
+static const char* SECRET_KEY = "mgnm5jyEax6BOzBjcWjjINPzKtM0fiHm";
 
 Ota::Ota() {
 #ifdef CONFIG_USE_MAC_AS_SERIAL_NUMBER
@@ -425,7 +429,32 @@ std::string Ota::GetActivationPayload() {
         return "{}";
     }
 
-    std::string hmac_hex;
+    std::string hash_hex;
+    uint8_t hash_result[32]; // SHA-256 output is 32 bytes
+    
+    // Calculate SHA256(secret_key + challenge)
+    mbedtls_sha256_context sha256_ctx;
+    mbedtls_sha256_init(&sha256_ctx);
+    mbedtls_sha256_starts(&sha256_ctx, 0); // 0 = SHA256, 1 = SHA224
+    
+    // Hash secret key
+    mbedtls_sha256_update(&sha256_ctx, (const unsigned char*)SECRET_KEY, strlen(SECRET_KEY));
+    // Hash challenge
+    mbedtls_sha256_update(&sha256_ctx, (const unsigned char*)activation_challenge_.data(), activation_challenge_.size());
+    
+    // Finalize hash
+    mbedtls_sha256_finish(&sha256_ctx, hash_result);
+    mbedtls_sha256_free(&sha256_ctx);
+
+    // Convert to hex string
+    for (size_t i = 0; i < sizeof(hash_result); i++) {
+        char buffer[3];
+        sprintf(buffer, "%02x", hash_result[i]);
+        hash_hex += buffer;
+    }
+    
+    ESP_LOGI(TAG, "  SHA256 hash calculated: %s (length: %zu)", hash_hex.c_str(), hash_hex.length());
+/*
 #ifdef SOC_HMAC_SUPPORTED
     uint8_t hmac_result[32]; // SHA-256 输出为32字节
     
@@ -442,7 +471,6 @@ std::string Ota::GetActivationPayload() {
         hmac_hex += buffer;
     }
 #endif
-
     cJSON *payload = cJSON_CreateObject();
     cJSON_AddStringToObject(payload, "algorithm", "hmac-sha256");
     cJSON_AddStringToObject(payload, "serial_number", serial_number_.c_str());
@@ -454,6 +482,45 @@ std::string Ota::GetActivationPayload() {
     cJSON_Delete(payload);
 
     ESP_LOGI(TAG, "Activation payload: %s", json.c_str());
+*/
+
+    cJSON *payload = cJSON_CreateObject();
+    cJSON_AddStringToObject(payload, "algorithm", "sha256");
+    cJSON_AddStringToObject(payload, "serial_number", serial_number_.c_str());
+    // Challenge is sent as plain text (not encrypted) - only JSON string escaping is applied
+    cJSON_AddStringToObject(payload, "challenge", activation_challenge_.c_str());
+    cJSON_AddStringToObject(payload, "hash", hash_hex.c_str());
+    
+    auto json_str = cJSON_PrintUnformatted(payload);
+    if (json_str == nullptr) {
+        ESP_LOGE(TAG, "Failed to create JSON string from payload");
+        cJSON_Delete(payload);
+        return "{}";
+    }
+    
+    std::string json(json_str);
+    cJSON_free(json_str);
+    cJSON_Delete(payload);
+
+    ESP_LOGI(TAG, "Activation payload JSON: %s", json.c_str());
+    ESP_LOGI(TAG, "Activation payload length: %zu bytes", json.length());
+    
+    // Hex dump for debugging
+    ESP_LOGI(TAG, "Activation payload hex dump:");
+    for (size_t i = 0; i < json.length(); i += 16) {
+        char hex_line[80];
+        char ascii_line[17] = {0};
+        int pos = 0;
+        pos += sprintf(hex_line + pos, "  %04zx: ", i);
+        for (size_t j = 0; j < 16 && (i + j) < json.length(); j++) {
+            uint8_t byte = static_cast<uint8_t>(json[i + j]);
+            pos += sprintf(hex_line + pos, "%02x ", byte);
+            ascii_line[j] = (byte >= 32 && byte < 127) ? byte : '.';
+        }
+        sprintf(hex_line + pos, " %s", ascii_line);
+        ESP_LOGI(TAG, "%s", hex_line);
+    }
+
     return json;
 }
 

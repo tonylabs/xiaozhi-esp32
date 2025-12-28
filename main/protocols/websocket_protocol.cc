@@ -8,11 +8,15 @@
 #include <cJSON.h>
 #include <esp_log.h>
 #include <arpa/inet.h>
+#include <mbedtls/base64.h>
 #include "assets/lang_config.h"
 
 #define TAG "WS"
 
 WebsocketProtocol::WebsocketProtocol() {
+#ifdef CONFIG_BOARD_TYPE_WAVESHARE_S3_TOUCH_LCD_1_46
+    use_pcm_base64_ = true;
+#endif
     event_group_handle_ = xEventGroupCreate();
 }
 
@@ -28,6 +32,27 @@ bool WebsocketProtocol::Start() {
 bool WebsocketProtocol::SendAudio(std::unique_ptr<AudioStreamPacket> packet) {
     if (websocket_ == nullptr || !websocket_->IsConnected()) {
         return false;
+    }
+
+    if (use_pcm_base64_ && packet->format == AudioPayloadFormat::kAudioPayloadFormatPcm16) {
+        // Server expects raw base64 text (no JSON envelope) on $default route.
+        size_t encoded_len = 0;
+        int ret = mbedtls_base64_encode(nullptr, 0, &encoded_len,
+            reinterpret_cast<const unsigned char*>(packet->payload.data()), packet->payload.size());
+        if (ret != MBEDTLS_ERR_BASE64_BUFFER_TOO_SMALL && ret != 0) {
+            ESP_LOGE(TAG, "Failed to calculate base64 length, ret=%d", ret);
+            return false;
+        }
+        std::string encoded;
+        encoded.resize(encoded_len);
+        ret = mbedtls_base64_encode(reinterpret_cast<unsigned char*>(encoded.data()), encoded.size(), &encoded_len,
+            reinterpret_cast<const unsigned char*>(packet->payload.data()), packet->payload.size());
+        if (ret != 0) {
+            ESP_LOGE(TAG, "Failed to encode PCM to base64, ret=%d", ret);
+            return false;
+        }
+        encoded.resize(encoded_len);
+        return SendText(encoded);
     }
 
     if (version_ == 2) {
@@ -107,6 +132,7 @@ bool WebsocketProtocol::OpenAudioChannel() {
 
 #ifdef CONFIG_WEBSOCKET_API_KEY
     websocket_->SetHeader("x-api-key", CONFIG_WEBSOCKET_API_KEY);
+    ESP_LOGI(TAG, "x-api-key: %s", CONFIG_WEBSOCKET_API_KEY);
 #endif
     websocket_->SetHeader("Protocol-Version", std::to_string(version_).c_str());
     websocket_->SetHeader("Device-Id", SystemInfo::GetMacAddress().c_str());
@@ -154,6 +180,7 @@ bool WebsocketProtocol::OpenAudioChannel() {
             auto type = cJSON_GetObjectItem(root, "type");
             if (cJSON_IsString(type)) {
                 if (strcmp(type->valuestring, "hello") == 0) {
+                    //ESP_LOGI(TAG, "Received server hello: %.*s", static_cast<int>(len), data);
                     ParseServerHello(root);
                 } else {
                     if (on_incoming_json_ != nullptr) {
@@ -195,6 +222,8 @@ bool WebsocketProtocol::OpenAudioChannel() {
         SetError(Lang::Strings::SERVER_TIMEOUT);
         return false;
     }
+    
+    ESP_LOGD(TAG, "Server hello received and acknowledged");
 
     if (on_audio_channel_opened_ != nullptr) {
         on_audio_channel_opened_();
@@ -216,7 +245,11 @@ std::string WebsocketProtocol::GetHelloMessage() {
     cJSON_AddItemToObject(root, "features", features);
     cJSON_AddStringToObject(root, "transport", "websocket");
     cJSON* audio_params = cJSON_CreateObject();
-    cJSON_AddStringToObject(audio_params, "format", "opus");
+    cJSON_AddStringToObject(audio_params, "format", use_pcm_base64_ ? "pcm" : "opus");
+    if (use_pcm_base64_) {
+        cJSON_AddStringToObject(audio_params, "encoding", "base64");
+        cJSON_AddNumberToObject(audio_params, "sample_width", 2);
+    }
     cJSON_AddNumberToObject(audio_params, "sample_rate", 16000);
     cJSON_AddNumberToObject(audio_params, "channels", 1);
     cJSON_AddNumberToObject(audio_params, "frame_duration", OPUS_FRAME_DURATION_MS);

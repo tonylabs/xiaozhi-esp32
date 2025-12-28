@@ -3,9 +3,9 @@
 #include "settings.h"
 #include "lvgl_theme.h"
 #include "assets/lang_config.h"
+#include "stikadoo_ui.h"
 
 #include <vector>
-#include <algorithm>
 #include <font_awesome.h>
 #include <esp_log.h>
 #include <esp_err.h>
@@ -776,7 +776,6 @@ void LcdDisplay::SetupUI() {
     LvglTheme* lvgl_theme = static_cast<LvglTheme*>(current_theme_);
     auto text_font = lvgl_theme->text_font()->font();
     auto icon_font = lvgl_theme->icon_font()->font();
-    auto large_icon_font = lvgl_theme->large_icon_font()->font();
 
     auto screen = lv_screen_active();
     lv_obj_set_style_text_font(screen, text_font, 0);
@@ -792,23 +791,17 @@ void LcdDisplay::SetupUI() {
     lv_obj_set_style_bg_color(container_, lvgl_theme->background_color(), 0);
     lv_obj_set_style_border_color(container_, lvgl_theme->border_color(), 0);
 
-    /* Bottom layer: emoji_box_ - centered display */
-    emoji_box_ = lv_obj_create(screen);
-    lv_obj_set_size(emoji_box_, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-    lv_obj_set_style_bg_opa(emoji_box_, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_pad_all(emoji_box_, 0, 0);
-    lv_obj_set_style_border_width(emoji_box_, 0, 0);
+    /* Bottom layer: Stikadoo UI - centered button */
+    stikadoo_ui_ = std::make_unique<StikadooUI>(screen, text_font);
+    emoji_box_ = stikadoo_ui_->root();
+    emoji_label_ = stikadoo_ui_->label();
     lv_obj_align(emoji_box_, LV_ALIGN_CENTER, 0, 0);
 
-    emoji_label_ = lv_label_create(emoji_box_);
-    lv_obj_set_style_text_font(emoji_label_, large_icon_font, 0);
-    lv_obj_set_style_text_color(emoji_label_, lvgl_theme->text_color(), 0);
-    lv_label_set_text(emoji_label_, FONT_AWESOME_MICROCHIP_AI);
-
-    emoji_image_ = lv_img_create(emoji_box_);
+    // Hidden image placeholder so SetEmotion can still render image-based assets if needed.
+    emoji_image_ = lv_image_create(emoji_box_);
     lv_obj_center(emoji_image_);
     lv_obj_add_flag(emoji_image_, LV_OBJ_FLAG_HIDDEN);
-
+    
     /* Middle layer: preview_image_ - centered display */
     preview_image_ = lv_image_create(screen);
     lv_obj_set_size(preview_image_, width_ / 2, height_ / 2);
@@ -970,73 +963,44 @@ void LcdDisplay::SetChatMessage(const char* role, const char* content) {
 }
 #endif
 
-void LcdDisplay::SetEmotion(const char* emotion) {
-    // Stop any running GIF animation
-    if (gif_controller_) {
+void LcdDisplay::SetStatus(const char* status) {
+    {
+        // Guard LVGL calls to avoid watchdog issues from concurrent access.
         DisplayLockGuard lock(this);
+        if (stikadoo_ui_) {
+            if (status != nullptr) {
+                if (std::strcmp(status, Lang::Strings::LISTENING) == 0) {
+                    stikadoo_ui_->SetText("Listening");
+                } else if (std::strcmp(status, "Thinking...") == 0) {
+                    stikadoo_ui_->SetText("Thinking");
+                } else {
+                    stikadoo_ui_->SetText("Speaking");
+                }
+            }
+            stikadoo_ui_->Show();
+        }
+    }
+
+    LvglDisplay::SetStatus(status);
+}
+
+void LcdDisplay::SetEmotion(const char* emotion) {
+    // Force the center widget to stay as the Stikadoo button (no emoji popups).
+    DisplayLockGuard lock(this);
+
+    // Stop and clear any running GIF/image so it never shows on boot.
+    if (gif_controller_) {
         gif_controller_->Stop();
         gif_controller_.reset();
     }
-    
-    if (emoji_image_ == nullptr) {
-        return;
-    }
-
-    auto emoji_collection = static_cast<LvglTheme*>(current_theme_)->emoji_collection();
-    auto image = emoji_collection != nullptr ? emoji_collection->GetEmojiImage(emotion) : nullptr;
-    if (image == nullptr) {
-        const char* utf8 = font_awesome_get_utf8(emotion);
-        if (utf8 != nullptr && emoji_label_ != nullptr) {
-            DisplayLockGuard lock(this);
-            lv_label_set_text(emoji_label_, utf8);
-            lv_obj_add_flag(emoji_image_, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_remove_flag(emoji_label_, LV_OBJ_FLAG_HIDDEN);
-        }
-        return;
-    }
-
-    DisplayLockGuard lock(this);
-    if (image->IsGif()) {
-        // Create new GIF controller
-        gif_controller_ = std::make_unique<LvglGif>(image->image_dsc());
-        
-        if (gif_controller_->IsLoaded()) {
-            // Set up frame update callback
-            gif_controller_->SetFrameCallback([this]() {
-                lv_image_set_src(emoji_image_, gif_controller_->image_dsc());
-            });
-            
-            // Set initial frame and start animation
-            lv_image_set_src(emoji_image_, gif_controller_->image_dsc());
-            gif_controller_->Start();
-            
-            // Show GIF, hide others
-            lv_obj_add_flag(emoji_label_, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_remove_flag(emoji_image_, LV_OBJ_FLAG_HIDDEN);
-        } else {
-            ESP_LOGE(TAG, "Failed to load GIF for emotion: %s", emotion);
-            gif_controller_.reset();
-        }
-    } else {
-        lv_image_set_src(emoji_image_, image->image_dsc());
-        lv_obj_add_flag(emoji_label_, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_remove_flag(emoji_image_, LV_OBJ_FLAG_HIDDEN);
-    }
-
-#if CONFIG_USE_WECHAT_MESSAGE_STYLE
-    // In WeChat message style, if emotion is neutral, don't display it
-    uint32_t child_count = lv_obj_get_child_cnt(content_);
-    if (strcmp(emotion, "neutral") == 0 && child_count > 0) {
-        // Stop GIF animation if running
-        if (gif_controller_) {
-            gif_controller_->Stop();
-            gif_controller_.reset();
-        }
-        
+    if (emoji_image_) {
         lv_obj_add_flag(emoji_image_, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(emoji_label_, LV_OBJ_FLAG_HIDDEN);
     }
-#endif
+
+    // Keep the button visible; text is managed by SetStatus.
+    if (stikadoo_ui_) {
+        stikadoo_ui_->Show();
+    }
 }
 
 void LcdDisplay::SetTheme(Theme* theme) {
@@ -1173,6 +1137,11 @@ void LcdDisplay::SetTheme(Theme* theme) {
         lv_obj_set_style_bg_color(bottom_bar_, lvgl_theme->background_color(), 0);
     }
 #endif
+
+    // Reapply the fixed style for the center Stikadoo button
+    if (stikadoo_ui_) {
+        stikadoo_ui_->ApplyStyle();
+    }
     
     // Update low battery popup
     lv_obj_set_style_bg_color(low_battery_popup_, lvgl_theme->low_battery_color(), 0);

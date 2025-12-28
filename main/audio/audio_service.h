@@ -100,6 +100,7 @@ public:
     void EnableVoiceProcessing(bool enable);
     void EnableAudioTesting(bool enable);
     void EnableDeviceAec(bool enable);
+    void SetSendFormat(AudioPayloadFormat format);
 
     void SetCallbacks(AudioServiceCallbacks& callbacks);
 
@@ -123,6 +124,7 @@ private:
     OpusResampler output_resampler_;
     DebugStatistics debug_statistics_;
     srmodel_list_t* models_list_ = nullptr;
+    AudioPayloadFormat audio_send_format_ = AudioPayloadFormat::kAudioPayloadFormatOpus;
 
     EventGroupHandle_t event_group_;
 
