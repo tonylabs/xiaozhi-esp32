@@ -1,5 +1,21 @@
 menu "Xiaozhi Assistant"
 
+
+config WEBSOCKET_API_KEY
+    string "WebSocket API Key"
+    default ""
+    help
+        API Key for AWS API Gateway WebSocket authentication.
+        This value will be used as a fallback if not set via OTA activation.
+        Leave empty if API Key is not required or will be set via OTA.
+
+config USE_MAC_AS_SERIAL_NUMBER
+    bool "Use MAC Address as Serial Number"
+    default n
+    help
+        If enabled, use the device MAC address as the serial number instead of reading from eFuse.
+        The MAC address will be formatted as a hex string without colons (e.g., "aabbccddeeff").
+
 config OTA_URL
     string "Default OTA URL"
     default "https://api.tenclass.net/xiaozhi/ota/"

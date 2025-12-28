@@ -2,7 +2,6 @@
 #include "system_info.h"
 #include "settings.h"
 #include "assets/lang_config.h"
-
 #include <cJSON.h>
 #include <esp_log.h>
 #include <esp_partition.h>
@@ -21,9 +20,20 @@
 
 #define TAG "Ota"
 
-
 Ota::Ota() {
-#ifdef ESP_EFUSE_BLOCK_USR_DATA
+#ifdef CONFIG_USE_MAC_AS_SERIAL_NUMBER
+    // Use MAC address as serial number
+    std::string mac_addr = SystemInfo::GetMacAddress();
+    // Remove colons from MAC address to create a clean hex string
+    serial_number_.clear();
+    for (char c : mac_addr) {
+        if (c != ':') {
+            serial_number_ += c;
+        }
+    }
+    has_serial_number_ = true;
+    ESP_LOGI(TAG, "Using MAC address as serial number: %s (formatted: %s)", mac_addr.c_str(), serial_number_.c_str());
+#elif defined(ESP_EFUSE_BLOCK_USR_DATA)
     // Read Serial Number from efuse user_data
     uint8_t serial_number[33] = {0};
     if (esp_efuse_read_field_blob(ESP_EFUSE_USER_DATA, serial_number, 32 * 8) == ESP_OK) {
@@ -34,7 +44,11 @@ Ota::Ota() {
             has_serial_number_ = true;
         }
     }
+#else
+    has_serial_number_ = false;
+    ESP_LOGW(TAG, "ESP_EFUSE_BLOCK_USR_DATA not defined, serial number not available");
 #endif
+    ESP_LOGI(TAG, "Serial number status: %s", has_serial_number_ ? "available" : "not available");
 }
 
 Ota::~Ota() {
@@ -83,6 +97,13 @@ esp_err_t Ota::CheckVersion() {
     if (url.length() < 10) {
         ESP_LOGE(TAG, "Check version URL is not properly set");
         return ESP_ERR_INVALID_ARG;
+    }
+
+    // Append /challenge to the URL
+    if (url.back() != '/') {
+        url += "/challenge";
+    } else {
+        url += "challenge";
     }
 
     auto http = SetupHttp();

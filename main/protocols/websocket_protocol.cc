@@ -3,7 +3,7 @@
 #include "system_info.h"
 #include "application.h"
 #include "settings.h"
-
+#include "sdkconfig.h"
 #include <cstring>
 #include <cJSON.h>
 #include <esp_log.h>
@@ -104,6 +104,10 @@ bool WebsocketProtocol::OpenAudioChannel() {
         }
         websocket_->SetHeader("Authorization", token.c_str());
     }
+
+#ifdef CONFIG_WEBSOCKET_API_KEY
+    websocket_->SetHeader("x-api-key", CONFIG_WEBSOCKET_API_KEY);
+#endif
     websocket_->SetHeader("Protocol-Version", std::to_string(version_).c_str());
     websocket_->SetHeader("Device-Id", SystemInfo::GetMacAddress().c_str());
     websocket_->SetHeader("Client-Id", Board::GetInstance().GetUuid().c_str());
