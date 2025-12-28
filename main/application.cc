@@ -466,28 +466,28 @@ void Application::CheckNewVersion() {
     }
 }
 
-void Application::InitializeProtocol() {
+void Application::InitializeProtocol() {    
     auto& board = Board::GetInstance();
     auto display = board.GetDisplay();
     auto codec = board.GetAudioCodec();
 
     display->SetStatus(Lang::Strings::LOADING_PROTOCOL);
 
-#ifdef CONFIG_BOARD_TYPE_WAVESHARE_S3_TOUCH_LCD_1_46
+#if defined(CONFIG_BOARD_TYPE_WAVESHARE_S3_TOUCH_LCD_1_46) || defined(CONFIG_BOARD_TYPE_STIKADOO_ESP32P4_WIFI6_QSPI_BOARD)
     bool use_pcm_base64_audio = false;
 #endif
     if (ota_->HasMqttConfig()) {
         protocol_ = std::make_unique<MqttProtocol>();
     } else if (ota_->HasWebsocketConfig()) {
         protocol_ = std::make_unique<WebsocketProtocol>();
-#ifdef CONFIG_BOARD_TYPE_WAVESHARE_S3_TOUCH_LCD_1_46
+#if defined(CONFIG_BOARD_TYPE_WAVESHARE_S3_TOUCH_LCD_1_46) || defined(CONFIG_BOARD_TYPE_STIKADOO_ESP32P4_WIFI6_QSPI_BOARD)
         use_pcm_base64_audio = true;
 #endif
     } else {
         ESP_LOGW(TAG, "No protocol specified in the OTA config, using MQTT");
         protocol_ = std::make_unique<MqttProtocol>();
     }
-#ifdef CONFIG_BOARD_TYPE_WAVESHARE_S3_TOUCH_LCD_1_46
+#if defined(CONFIG_BOARD_TYPE_WAVESHARE_S3_TOUCH_LCD_1_46) || defined(CONFIG_BOARD_TYPE_STIKADOO_ESP32P4_WIFI6_QSPI_BOARD)
     audio_service_.SetSendFormat(use_pcm_base64_audio ? AudioPayloadFormat::kAudioPayloadFormatPcm16
                                                       : AudioPayloadFormat::kAudioPayloadFormatOpus);
 #endif
