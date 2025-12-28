@@ -1,0 +1,13 @@
+{
+    "target": "esp32p4",
+    "builds": [
+        {
+            "name": "stikadoo-esp32p4-wifi6-qspi",
+            "sdkconfig_append": [
+                "CONFIG_LCD_QSPI_TS040WVS02NP=y",
+                "CONFIG_USE_DEVICE_AEC=y",
+                "CONFIG_USE_AUDIO_PROCESSOR=y"
+            ]
+        }
+    ]
+}

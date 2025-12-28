@@ -14,6 +14,7 @@ set(SOURCES "audio/audio_codec.cc"
             "led/gpio_led.cc"
             "display/display.cc"
             "display/lcd_display.cc"
+            "display/panels/ts040wvs02np.cc"
             "display/stikadoo_ui.cc"
             "display/oled_display.cc"
             "display/lvgl_display/lvgl_display.cc"
@@ -69,6 +70,11 @@ if(CONFIG_BOARD_TYPE_BREAD_COMPACT_WIFI)
     set(BOARD_TYPE "bread-compact-wifi")
     set(BUILTIN_TEXT_FONT font_puhui_basic_14_1)
     set(BUILTIN_ICON_FONT font_awesome_14_1)
+elseif(CONFIG_BOARD_TYPE_STIKADOO_ESP32P4_WIFI6_QSPI_BOARD)
+    set(BOARD_TYPE "stikadoo-esp32p4-wifi6-qspi")
+    set(BUILTIN_TEXT_FONT font_puhui_basic_30_4)
+    set(BUILTIN_ICON_FONT font_awesome_30_4)
+    set(DEFAULT_EMOJI_COLLECTION twemoji_64)
 elseif(CONFIG_BOARD_TYPE_BREAD_COMPACT_ML307)
     set(BOARD_TYPE "bread-compact-ml307")
     set(BUILTIN_TEXT_FONT font_puhui_basic_14_1)
