@@ -9,6 +9,8 @@
 #include <algorithm>
 #include <cstring>
 #include <esp_pthread.h>
+#include <vector>
+#include <climits>
 
 #include "application.h"
 #include "display.h"
@@ -17,8 +19,76 @@
 #include "settings.h"
 #include "lvgl_theme.h"
 #include "lvgl_display.h"
+#include "printer/thermal_printer.h"
+#include "display/lvgl_display/jpg/jpeg_to_image.h"
+
+#include <esp_heap_caps.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 #define TAG "MCP"
+
+static bool ConvertLvglToRgb565(const lv_img_dsc_t* img_dsc, std::vector<uint16_t>& out, size_t& stride_pixels) {
+    out.clear();
+    stride_pixels = 0;
+    if (img_dsc == nullptr || img_dsc->data == nullptr) {
+        return false;
+    }
+    const uint32_t w_u = static_cast<uint32_t>(img_dsc->header.w);
+    const uint32_t h_u = static_cast<uint32_t>(img_dsc->header.h);
+    if (w_u == 0 || h_u == 0) {
+        return false;
+    }
+    const size_t width = static_cast<size_t>(w_u);
+    const size_t height = static_cast<size_t>(h_u);
+    const uint8_t* raw = static_cast<const uint8_t*>(img_dsc->data);
+    out.resize(width * height);
+    stride_pixels = width;
+
+    switch (img_dsc->header.cf) {
+        case LV_COLOR_FORMAT_RGB565: {
+            std::memcpy(out.data(), raw, out.size() * sizeof(uint16_t));
+            return true;
+        }
+        case LV_COLOR_FORMAT_RGB888: {
+            for (size_t i = 0; i < width * height; ++i) {
+                uint8_t r = raw[i * 3 + 0];
+                uint8_t g = raw[i * 3 + 1];
+                uint8_t b = raw[i * 3 + 2];
+                out[i] = static_cast<uint16_t>(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+            }
+            return true;
+        }
+        case LV_COLOR_FORMAT_ARGB8888: {
+            for (size_t i = 0; i < width * height; ++i) {
+                uint8_t r = raw[i * 4 + 0];
+                uint8_t g = raw[i * 4 + 1];
+                uint8_t b = raw[i * 4 + 2];
+                out[i] = static_cast<uint16_t>(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+            }
+            return true;
+        }
+        case LV_COLOR_FORMAT_I1: {
+            for (size_t y = 0; y < height; ++y) {
+                for (size_t x = 0; x < width; ++x) {
+                    size_t idx = y * width + x;
+                    bool black = raw[idx >> 3] & (0x80 >> (idx & 0x7));
+                    out[idx] = black ? 0x0000 : 0xFFFF;
+                }
+            }
+            return true;
+        }
+        default:
+            ESP_LOGW(TAG, "Preview image: unsupported color format for printer cf=%d", static_cast<int>(img_dsc->header.cf));
+            out.clear();
+            stride_pixels = 0;
+            return false;
+    }
+}
+
+static inline int SaturateToInt(size_t v) {
+    return (v > static_cast<size_t>(INT_MAX)) ? INT_MAX : static_cast<int>(v);
+}
 
 McpServer::McpServer() {
 }
@@ -130,14 +200,14 @@ void McpServer::AddUserOnlyTools() {
     AddUserOnlyTool("self.get_system_info",
         "Get the system information",
         PropertyList(),
-        [this](const PropertyList& properties) -> ReturnValue {
+        [](const PropertyList& properties) -> ReturnValue {
             auto& board = Board::GetInstance();
             return board.GetSystemInfoJson();
         });
 
     AddUserOnlyTool("self.reboot", "Reboot the system",
         PropertyList(),
-        [this](const PropertyList& properties) -> ReturnValue {
+        [](const PropertyList& properties) -> ReturnValue {
             auto& app = Application::GetInstance();
             app.Schedule([&app]() {
                 ESP_LOGW(TAG, "User requested reboot");
@@ -153,7 +223,7 @@ void McpServer::AddUserOnlyTools() {
         PropertyList({
             Property("url", kPropertyTypeString, "The URL of the firmware binary file to download and install")
         }),
-        [this](const PropertyList& properties) -> ReturnValue {
+        [](const PropertyList& properties) -> ReturnValue {
             auto url = properties["url"].value<std::string>();
             ESP_LOGI(TAG, "User requested firmware upgrade from URL: %s", url.c_str());
             
@@ -277,9 +347,53 @@ void McpServer::AddUserOnlyTools() {
                 http->Close();
 
                 auto image = std::make_unique<LvglAllocatedImage>(data, content_length);
+                const lv_img_dsc_t* img_dsc = image->image_dsc();
+
+                // Kick off async thermal print if available
+                if (img_dsc != nullptr) {
+                    std::vector<uint16_t> rgb565;
+                    size_t stride_pixels = 0;
+                    if (ConvertLvglToRgb565(img_dsc, rgb565, stride_pixels) && !rgb565.empty() && stride_pixels > 0) {
+                        // Move buffer to heap for task lifetime
+                        size_t buf_bytes = rgb565.size() * sizeof(uint16_t);
+                        uint16_t* heap_buf = static_cast<uint16_t*>(heap_caps_malloc(buf_bytes, MALLOC_CAP_8BIT));
+                        if (heap_buf != nullptr) {
+                            memcpy(heap_buf, rgb565.data(), buf_bytes);
+                            struct TaskData {
+                                uint16_t* buf;
+                                size_t w;
+                                size_t h;
+                                size_t stride;
+                            };
+                            TaskData* td = new TaskData();
+                            td->buf = heap_buf;
+                            td->w = stride_pixels;
+                            td->h = rgb565.size() / stride_pixels;
+                            td->stride = stride_pixels;
+                            xTaskCreate([](void* arg) {
+                                std::unique_ptr<TaskData> td(static_cast<TaskData*>(arg));
+                                auto printer = Board::GetInstance().GetThermalPrinter();
+                                if (printer != nullptr && printer->initialized()) {
+                                    esp_err_t err = printer->PrintImageRgb565(td->buf, SaturateToInt(td->w), SaturateToInt(td->h), td->stride);
+                                    if (err != ESP_OK) {
+                                        ESP_LOGE(TAG, "Async thermal print failed: %s", esp_err_to_name(err));
+                                    }
+                                } else {
+                                    ESP_LOGW(TAG, "Thermal printer not ready for async print");
+                                }
+                                heap_caps_free(td->buf);
+                                vTaskDelete(nullptr);
+                            }, "print_preview", 4096, td, 3, nullptr);
+                        } else {
+                            ESP_LOGW(TAG, "No memory for async print buffer");
+                        }
+                    }
+                }
+
                 display->SetPreviewImage(std::move(image));
                 return true;
             });
+
 #endif // CONFIG_LV_USE_SNAPSHOT
     }
 #endif // HAVE_LVGL
