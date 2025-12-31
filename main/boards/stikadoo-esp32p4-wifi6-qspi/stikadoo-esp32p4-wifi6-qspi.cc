@@ -183,9 +183,7 @@ private:
         esp_lcd_panel_disp_on_off(panel, true);
         esp_lcd_panel_swap_xy(panel, DISPLAY_SWAP_XY);
         esp_lcd_panel_mirror(panel, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
-
         SendVendorBacklightInit(panel_io);
-
         display_ = new CustomLcdDisplay(panel_io, panel, DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY);
         backlight_ = new CustomBacklight(panel_io);
         backlight_->RestoreBrightness();
@@ -194,7 +192,6 @@ private:
     void InitializeButtons() {
         // Behavior: press-and-hold to listen, release to stop.
         boot_button_.OnPressDown([this]() {
-            ESP_LOGI(TAG, "Boot button press down");
             auto& app = Application::GetInstance();
             if (app.GetDeviceState() == kDeviceStateStarting) {
                 EnterWifiConfigMode();
@@ -204,7 +201,6 @@ private:
         });
 
         boot_button_.OnPressUp([]() {
-            ESP_LOGI(TAG, "Boot button release");
             auto& app = Application::GetInstance();
             app.StopListening();
         });
