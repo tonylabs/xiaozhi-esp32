@@ -196,6 +196,9 @@ esp_err_t ThermalPrinter::Init() {
 }
 
 esp_err_t ThermalPrinter::SelfTest() {
+    // Ensure DTR is HIGH before self-test (per RULE.md: DTR should be HIGH for printer communication)
+    gpio_set_level(dtr_pin_, 1);
+    
     esp_err_t err = WriteCommand(kCmdSerialOpen, sizeof(kCmdSerialOpen));
     if (err != ESP_OK) {
         return err;
@@ -220,6 +223,9 @@ esp_err_t ThermalPrinter::PrintText(const std::string& text, bool append_newline
     if (!initialized_) {
         return ESP_ERR_INVALID_STATE;
     }
+
+    // Ensure DTR is HIGH before printing (per RULE.md: DTR should be HIGH for printer communication)
+    gpio_set_level(dtr_pin_, 1);
 
     // Open UART session on printer side
     esp_err_t err = WriteCommand(kCmdSerialOpen, sizeof(kCmdSerialOpen));
@@ -265,10 +271,20 @@ esp_err_t ThermalPrinter::PrintImageRgb565(const uint16_t* data, int width, int 
         return ESP_ERR_INVALID_ARG;
     }
 
-    // Limit width to typical 384-dot head (50mm at 8 dots/mm)
+    // Ensure DTR is HIGH before printing (per RULE.md: DTR should be HIGH for printer communication)
+    gpio_set_level(dtr_pin_, 1);
+
+    // Limit width to 384-dot head per printer specification (1 ≤ width ≤ 384)
     const int max_width = 384;
-    const int target_width = (width > max_width) ? max_width : width;
+    const int min_width = 1;
+    int target_width = (width > max_width) ? max_width : width;
+    if (target_width < min_width) {
+        target_width = min_width;
+    }
     const int target_height = (width > 0) ? std::max(1, (height * target_width) / width) : height;
+    
+    ESP_LOGI(TAG, "Printing image: %dx%d -> %dx%d (printer max width: %d)", 
+             width, height, target_width, target_height, max_width);
 
     // Convert RGB565 to grayscale with proper scaling
     std::vector<uint8_t> gray_image(target_width * target_height);
@@ -322,6 +338,9 @@ esp_err_t ThermalPrinter::PrintImageRgb565(const uint16_t* data, int width, int 
         }
     }
 
+    // Ensure DTR is HIGH before opening UART session
+    gpio_set_level(dtr_pin_, 1);
+    
     // Open UART session on printer side
     esp_err_t err = WriteCommand(kCmdSerialOpen, sizeof(kCmdSerialOpen));
     if (err != ESP_OK) {
@@ -354,12 +373,19 @@ esp_err_t ThermalPrinter::PrintImageRgb565(const uint16_t* data, int width, int 
 
     for (int pass = 0; pass < num_passes; ++pass) {
         // ESC * m nL nH [data]
-        // nL + nH*256 = horizontal dots
+        // nL + nH*256 = horizontal dots (must satisfy: 1 ≤ nL + nH*256 ≤ 384 per RULE.md)
         // Always send both nL and nH bytes for protocol compatibility
+        // Verify width is within valid range (1-384)
+        if (target_width < 1 || target_width > 384) {
+            ESP_LOGE(TAG, "Invalid target_width: %d (must be 1-384)", target_width);
+            WriteCommand(kCmdSerialClose, sizeof(kCmdSerialClose));
+            return ESP_ERR_INVALID_ARG;
+        }
+        
         uint8_t cmd_header[5] = {
             0x1B, 0x2A, m,
-            static_cast<uint8_t>(target_width & 0xFF),
-            static_cast<uint8_t>((target_width >> 8) & 0xFF)
+            static_cast<uint8_t>(target_width & 0xFF),        // nL (low byte)
+            static_cast<uint8_t>((target_width >> 8) & 0xFF)  // nH (high byte)
         };
         
         err = WriteCommand(cmd_header, sizeof(cmd_header));
