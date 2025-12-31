@@ -144,7 +144,7 @@ private:
             .dc_gpio_num = -1,
             .spi_mode = 0,
             .pclk_hz = 60 * 1000 * 1000, // match vendor reference
-            .trans_queue_depth = 10,
+            .trans_queue_depth = 20, // Increased from 10 to prevent queue overflow during heavy operations
             .on_color_trans_done = nullptr,
             .user_ctx = nullptr,
             .lcd_cmd_bits = 32,
