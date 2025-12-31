@@ -88,7 +88,7 @@ void Application::Initialize() {
 
     // Add state change listeners
     state_machine_.AddStateChangeListener([this](DeviceState old_state, DeviceState new_state) {
-        xEventGroupSetBits(event_group_, MAIN_EVENT_STATE_CHANGED);
+        OnStateChanged(old_state, new_state);
     });
 
     // Start the clock timer to update the status bar
@@ -866,69 +866,90 @@ void Application::HandleWakeWordDetectedEvent() {
     }
 }
 
+void Application::OnStateChanged(DeviceState old_state, DeviceState new_state) {
+    {
+        std::lock_guard<std::mutex> lock(state_changes_mutex_);
+        pending_state_changes_.emplace_back(old_state, new_state);
+    }
+    xEventGroupSetBits(event_group_, MAIN_EVENT_STATE_CHANGED);
+}
+
 void Application::HandleStateChangedEvent() {
-    DeviceState new_state = state_machine_.GetState();
-    clock_ticks_ = 0;
+    std::deque<std::pair<DeviceState, DeviceState>> transitions;
+    {
+        std::lock_guard<std::mutex> lock(state_changes_mutex_);
+        transitions.swap(pending_state_changes_);
+    }
+    if (transitions.empty()) {
+        return;
+    }
 
     auto& board = Board::GetInstance();
     auto display = board.GetDisplay();
     auto led = board.GetLed();
-    led->OnStateChanged();
-    
-    switch (new_state) {
-        case kDeviceStateUnknown:
-        case kDeviceStateIdle:
-            display->SetStatus(Lang::Strings::STANDBY);
-            display->SetEmotion("neutral");
-            audio_service_.EnableVoiceProcessing(false);
-            audio_service_.EnableWakeWordDetection(true);
-            break;
-        case kDeviceStateConnecting:
-            display->SetStatus(Lang::Strings::CONNECTING);
-            display->SetEmotion("neutral");
-            display->SetChatMessage("system", "");
-            break;
-        case kDeviceStateListening:
-            display->SetStatus(Lang::Strings::LISTENING);
-            display->SetEmotion("neutral");
 
-            // Make sure the audio processor is running
-            if (!audio_service_.IsAudioProcessorRunning()) {
-                // Send the start listening command
-                protocol_->SendStartListening(listening_mode_);
-                audio_service_.EnableVoiceProcessing(true);
-                audio_service_.EnableWakeWordDetection(false);
-            }
+    for (const auto& transition : transitions) {
+        DeviceState old_state = transition.first;
+        DeviceState new_state = transition.second;
+        clock_ticks_ = 0;
+        led->OnStateChanged();
 
-            // Play popup sound after ResetDecoder (in EnableVoiceProcessing) has been called
-            if (play_popup_on_listening_) {
-                play_popup_on_listening_ = false;
-                audio_service_.PlaySound(Lang::Sounds::OGG_POPUP);
-            }
-            break;
-        case kDeviceStateThinking:
-            display->SetStatus("Thinking...");
-            display->SetEmotion("neutral");
-            audio_service_.EnableVoiceProcessing(false);
-            audio_service_.EnableWakeWordDetection(false);
-            break;
-        case kDeviceStateSpeaking:
-            display->SetStatus(Lang::Strings::SPEAKING);
-
-            if (listening_mode_ != kListeningModeRealtime) {
+        switch (new_state) {
+            case kDeviceStateUnknown:
+            case kDeviceStateIdle:
+                display->SetStatus(Lang::Strings::STANDBY);
+                display->SetEmotion("neutral");
                 audio_service_.EnableVoiceProcessing(false);
-                // Only AFE wake word can be detected in speaking mode
-                audio_service_.EnableWakeWordDetection(audio_service_.IsAfeWakeWord());
-            }
-            audio_service_.ResetDecoder();
-            break;
-        case kDeviceStateWifiConfiguring:
-            audio_service_.EnableVoiceProcessing(false);
-            audio_service_.EnableWakeWordDetection(false);
-            break;
-        default:
-            // Do nothing
-            break;
+                audio_service_.EnableWakeWordDetection(true);
+                break;
+            case kDeviceStateConnecting:
+                display->SetStatus(Lang::Strings::CONNECTING);
+                display->SetEmotion("neutral");
+                display->SetChatMessage("system", "");
+                break;
+            case kDeviceStateListening:
+                display->SetStatus(Lang::Strings::LISTENING);
+                display->SetEmotion("neutral");
+
+                if (protocol_ && old_state != kDeviceStateListening) {
+                    protocol_->SendStartListening(listening_mode_);
+                }
+
+                if (!audio_service_.IsAudioProcessorRunning()) {
+                    audio_service_.EnableVoiceProcessing(true);
+                }
+                audio_service_.EnableWakeWordDetection(false);
+
+                // Play popup sound after ResetDecoder (in EnableVoiceProcessing) has been called
+                if (play_popup_on_listening_) {
+                    play_popup_on_listening_ = false;
+                    audio_service_.PlaySound(Lang::Sounds::OGG_POPUP);
+                }
+                break;
+            case kDeviceStateThinking:
+                display->SetStatus("Thinking...");
+                display->SetEmotion("neutral");
+                audio_service_.EnableVoiceProcessing(false);
+                audio_service_.EnableWakeWordDetection(false);
+                break;
+            case kDeviceStateSpeaking:
+                display->SetStatus(Lang::Strings::SPEAKING);
+
+                if (listening_mode_ != kListeningModeRealtime) {
+                    audio_service_.EnableVoiceProcessing(false);
+                    // Only AFE wake word can be detected in speaking mode
+                    audio_service_.EnableWakeWordDetection(audio_service_.IsAfeWakeWord());
+                }
+                audio_service_.ResetDecoder();
+                break;
+            case kDeviceStateWifiConfiguring:
+                audio_service_.EnableVoiceProcessing(false);
+                audio_service_.EnableWakeWordDetection(false);
+                break;
+            default:
+                // Do nothing
+                break;
+        }
     }
 }
 
@@ -1131,4 +1152,3 @@ void Application::ResetProtocol() {
         protocol_.reset();
     });
 }
-

@@ -10,6 +10,7 @@
 #include <mutex>
 #include <deque>
 #include <memory>
+#include <utility>
 
 #include "protocol.h"
 #include "ota.h"
@@ -125,7 +126,9 @@ private:
     ~Application();
 
     std::mutex mutex_;
+    std::mutex state_changes_mutex_;
     std::deque<std::function<void()>> main_tasks_;
+    std::deque<std::pair<DeviceState, DeviceState>> pending_state_changes_;
     std::unique_ptr<Protocol> protocol_;
     EventGroupHandle_t event_group_ = nullptr;
     esp_timer_handle_t clock_timer_handle_ = nullptr;

@@ -14,6 +14,7 @@
 #include <esp_intr_alloc.h>
 #include <esp_log.h>
 #include <esp_lvgl_port.h>
+#include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
@@ -90,9 +91,20 @@ class StikadooEsp32p4Wifi6Qspi : public WifiBoard {
 private:
     i2c_master_bus_handle_t codec_i2c_bus_;
     Button boot_button_;
+    esp_timer_handle_t listen_start_timer_ = nullptr;
+    bool boot_button_down_ = false;
+    bool listening_started_by_button_ = false;
     LcdDisplay *display_;
     CustomBacklight *backlight_;
     ThermalPrinter *thermal_printer_ = nullptr;
+
+    void HandleBootButtonDelayedListenStart() {
+        if (!boot_button_down_ || listening_started_by_button_) {
+            return;
+        }
+        listening_started_by_button_ = true;
+        Application::GetInstance().StartListening();
+    }
 
     void InitializeCodecI2c() {
         // Initialize I2C peripheral
@@ -190,6 +202,18 @@ private:
     }
 
     void InitializeButtons() {
+        constexpr int kListenStartDelayMs = 120;
+        esp_timer_create_args_t listen_timer_args = {
+            .callback = [](void* arg) {
+                static_cast<StikadooEsp32p4Wifi6Qspi*>(arg)->HandleBootButtonDelayedListenStart();
+            },
+            .arg = this,
+            .dispatch_method = ESP_TIMER_TASK,
+            .name = "boot_listen_delay",
+            .skip_unhandled_events = true,
+        };
+        ESP_ERROR_CHECK(esp_timer_create(&listen_timer_args, &listen_start_timer_));
+
         // Behavior: press-and-hold to listen, release to stop.
         boot_button_.OnPressDown([this]() {
             auto& app = Application::GetInstance();
@@ -197,12 +221,26 @@ private:
                 EnterWifiConfigMode();
                 return;
             }
-            app.StartListening();
+            boot_button_down_ = true;
+            listening_started_by_button_ = false;
+            esp_err_t stop_ret = esp_timer_stop(listen_start_timer_);
+            if (stop_ret != ESP_OK && stop_ret != ESP_ERR_INVALID_STATE) {
+                ESP_ERROR_CHECK(stop_ret);
+            }
+            ESP_ERROR_CHECK(esp_timer_start_once(listen_start_timer_, kListenStartDelayMs * 1000));
         });
 
-        boot_button_.OnPressUp([]() {
+        boot_button_.OnPressUp([this]() {
             auto& app = Application::GetInstance();
-            app.StopListening();
+            boot_button_down_ = false;
+            esp_err_t stop_ret = esp_timer_stop(listen_start_timer_);
+            if (stop_ret != ESP_OK && stop_ret != ESP_ERR_INVALID_STATE) {
+                ESP_ERROR_CHECK(stop_ret);
+            }
+            if (listening_started_by_button_) {
+                app.StopListening();
+            }
+            listening_started_by_button_ = false;
         });
     }
 

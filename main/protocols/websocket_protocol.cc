@@ -176,7 +176,14 @@ bool WebsocketProtocol::OpenAudioChannel() {
             }
         } else {
             // Parse JSON data
-            auto root = cJSON_Parse(data);
+            auto root = cJSON_ParseWithLength(data, len);
+            if (root == nullptr) {
+                const int max_log = 256;
+                int log_len = static_cast<int>(len > max_log ? max_log : len);
+                ESP_LOGE(TAG, "Invalid JSON (%u bytes): %.*s", static_cast<unsigned>(len), log_len, data);
+                last_incoming_time_ = std::chrono::steady_clock::now();
+                return;
+            }
             auto type = cJSON_GetObjectItem(root, "type");
             if (cJSON_IsString(type)) {
                 if (strcmp(type->valuestring, "hello") == 0) {
@@ -188,7 +195,14 @@ bool WebsocketProtocol::OpenAudioChannel() {
                     }
                 }
             } else {
-                ESP_LOGE(TAG, "Missing message type, data: %s", data);
+                auto message = cJSON_GetObjectItem(root, "message");
+                if (cJSON_IsString(message)) {
+                    ESP_LOGE(TAG, "Server message without type: %s", message->valuestring);
+                } else {
+                    const int max_log = 256;
+                    int log_len = static_cast<int>(len > max_log ? max_log : len);
+                    ESP_LOGE(TAG, "Missing message type (%u bytes): %.*s", static_cast<unsigned>(len), log_len, data);
+                }
             }
             cJSON_Delete(root);
         }
