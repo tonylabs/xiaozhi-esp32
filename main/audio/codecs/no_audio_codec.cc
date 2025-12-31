@@ -6,12 +6,35 @@
 
 #define TAG "NoAudioCodec"
 
-NoAudioCodec::~NoAudioCodec() {
+void NoAudioCodec::Start() {
+    AudioCodec::Start();
+    if (tx_handle_ != nullptr) {
+        ESP_ERROR_CHECK(i2s_channel_enable(tx_handle_));
+        tx_running_ = true;
+    }
     if (rx_handle_ != nullptr) {
+        ESP_ERROR_CHECK(i2s_channel_enable(rx_handle_));
+        rx_running_ = true;
+    }
+}
+
+NoAudioCodec::~NoAudioCodec() {
+    if (tx_handle_ != nullptr && tx_running_) {
+        ESP_ERROR_CHECK(i2s_channel_disable(tx_handle_));
+        tx_running_ = false;
+    }
+    if (rx_handle_ != nullptr && rx_running_) {
         ESP_ERROR_CHECK(i2s_channel_disable(rx_handle_));
+        rx_running_ = false;
+    }
+
+    if (rx_handle_ != nullptr) {
+        ESP_ERROR_CHECK(i2s_del_channel(rx_handle_));
+        rx_handle_ = nullptr;
     }
     if (tx_handle_ != nullptr) {
-        ESP_ERROR_CHECK(i2s_channel_disable(tx_handle_));
+        ESP_ERROR_CHECK(i2s_del_channel(tx_handle_));
+        tx_handle_ = nullptr;
     }
 }
 
